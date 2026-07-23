@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Moonlight Bloom Engine</title>
+
+    <!-- Google Fonts & Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020108;
+            font-family: 'Montserrat', sans-serif;
+            color: #ffffff;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Glassmorphic Intro Overlay */
+        #introOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(2, 1, 10, 0.94);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 30px 20px;
+            text-align: center;
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.8s;
+        }
+
+        .intro-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 28px;
+            padding: 42px 30px;
+            max-width: 440px;
+            width: 100%;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .intro-title {
+            font-size: 22px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #fb7185, #e11d48, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .intro-text {
+            font-size: 14px;
+            font-weight: 400;
+            line-height: 1.6;
+            color: #cbd5e1;
+            margin-bottom: 30px;
+            font-style: italic;
+        }
+
+        .btn-moonlight {
+            background: linear-gradient(135deg, #fb7185 0%, #e11d48 50%, #c084fc 100%);
+            border: none;
+            color: #ffffff;
+            padding: 16px 42px;
+            font-size: 14px;
+            font-weight: 800;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(225, 29, 72, 0.4);
+            letter-spacing: 1.5px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .btn-moonlight:active {
+            transform: scale(0.95);
+            box-shadow: 0 5px 15px rgba(225, 29, 72, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="moonCanvas"></canvas>
+
+    <!-- Intro Modal Overlay -->
+    <div id="introOverlay">
+        <div class="intro-card">
+            <div class="intro-title">MOONLIGHT BLOOM 🌕</div>
+            <div class="intro-text">"A little experiment, a little creativity, and a lot of patience."</div>
+            <button class="btn-bloom btn-moonlight" id="startBtn">CAST MOONLIGHT 🌸</button>
+        </div>
+    </div>
+
+    <script>
+        // --- AUDIO SETUP ---
+        const BG_MUSIC_URL = 'song.mp3';
+        const bgAudio = new Audio(BG_MUSIC_URL);
+        bgAudio.loop = true;
+
+        // --- CANVAS INIT ---
+        const canvas = document.getElementById('moonCanvas');
+        const ctx = canvas.getContext('2d');
+        let dpr = window.devicePixelRatio || 1;
+
+        function resizeCanvas() {
+            dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            ctx.scale(dpr, dpr);
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- STATE VARIABLES ---
+        let globalProgress = 0.0;
+        let isPlaying = true;
+        let bloomSpeed = 0.00065; 
+        let flowerType = 'celestialRose'; // Locked strictly to Celestial Rose
+        let animTime = 0;
+
+        // Camera Zoom & Flash State
+        let currentZoom = 1.0;
+        let targetZoom = 1.0;
+        let flashAlpha = 0;
+        let hasFlashed = false;
+
+        // Light Beam & Sway Physics
+        let beamAngle = 0;
+        let targetBeamAngle = 0;
+
+        // --- STARFIELD & SHOOTING STARS ---
+        const stars = [];
+        for (let i = 0; i < 180; i++) {
+            stars.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight * 0.7,
+                size: Math.random() * 1.5 + 0.5,
+                alpha: Math.random(),
+                speed: Math.random() * 0.02 + 0.005
+            });
+        }
+
+        const shootingStars = [];
+        function triggerShootingStars() {
+            shootingStars.push({
+                x: window.innerWidth * 0.2 + Math.random() * window.innerWidth * 0.3,
+                y: window.innerHeight * 0.08 + Math.random() * window.innerHeight * 0.15,
+                len: 120 + Math.random() * 60,
+                speed: 14 + Math.random() * 6,
+                dx: 8,
+                dy: 5,
+                alpha: 1.0
+            });
+            setTimeout(() => {
+                shootingStars.push({
+                    x: window.innerWidth * 0.4 + Math.random() * window.innerWidth * 0.3,
+                    y: window.innerHeight * 0.05 + Math.random() * window.innerHeight * 0.1,
+                    len: 140 + Math.random() * 50,
+                    speed: 16 + Math.random() * 5,
+                    dx: 9,
+                    dy: 6,
+                    alpha: 1.0
+                });
+            }, 600);
+        }
+
+        // --- FIREFLIES PARTICLES ---
+        const fireflies = [];
+        for (let i = 0; i < 50; i++) {
+            fireflies.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                radius: Math.random() * 2.2 + 1.0,
+                vx: (Math.random() - 0.5) * 0.8,
+                vy: (Math.random() - 0.5) * 0.8,
+                alpha: Math.random() * 0.8 + 0.2,
+                pulse: Math.random() * Math.PI * 2
+            });
+        }
+
+        // --- SUBTLE MAGIC SPARKLES HALO ---
+        const subtleSparkles = [];
+        for (let i = 0; i < 50; i++) {
+            subtleSparkles.push({
+                angle: Math.random() * Math.PI * 2,
+                dist: Math.random() * 120 + 20,
+                speed: Math.random() * 0.012 + 0.004,
+                size: Math.random() * 1.8 + 0.6,
+                twinkleSpeed: Math.random() * 0.08 + 0.03,
+                twinklePhase: Math.random() * Math.PI * 2,
+                yOffset: (Math.random() - 0.5) * 80
+            });
+        }
+
+        // --- FALLING PETALS SYSTEM ---
+        const fallingPetals = [];
+
+        // --- GLOWING BUTTERFLIES WITH LAND & SKY FLY-UP LOGIC ---
+        const butterflies = [];
+        const BUTTERFLY_COUNT = 3;
+        const butterflyConfig = [
+            { side: -1, offset: 0, isLander: true },   // Left side (Lands on flower)
+            { side: -1, offset: 70, isLander: false }, // Left side
+            { side: 1,  offset: 0, isLander: false }   // Right side
+        ];
+
+        for (let i = 0; i < BUTTERFLY_COUNT; i++) {
+            const cfg = butterflyConfig[i];
+            butterflies.push({
+                id: i,
+                side: cfg.side,
+                x: cfg.side < 0 ? -100 - cfg.offset : window.innerWidth + 100 + cfg.offset,
+                y: window.innerHeight * 0.35 + (Math.random() - 0.5) * 160,
+                orbitAngle: (i / BUTTERFLY_COUNT) * Math.PI * 2,
+                orbitRadiusX: 70 + Math.random() * 30,
+                orbitRadiusY: 40 + Math.random() * 20,
+                orbitSpeed: 0.015 + Math.random() * 0.006,
+                wingPhase: Math.random() * Math.PI * 2,
+                wingSpeed: 0.22 + Math.random() * 0.08,
+                color: ['#fb7185', '#f472b6', '#c084fc'][i],
+                trail: [],
+                state: 'ENTRY',
+                landTimer: 0,
+                isLander: cfg.isLander
+            });
+        }
+
+        // --- PALETTES ---
+        const PALETTES = {
+            celestialRose: {
+                stem: '#34d399',
+                leaf: '#059669',
+                sepal: '#064e3b',
+                petalBase: '#e11d48',
+                petalTip: '#fb7185',
+                stamen: '#f59e0b',
+                pollen: '#fde68a',
+                moonGlow: 'rgba(251, 113, 133, 0.28)'
+            }
+        };
+
+        function triggerHaptic(type = 'light') {
+            if ('vibrate' in navigator) {
+                if (type === 'light') navigator.vibrate(15);
+                if (type === 'heavy') navigator.vibrate([30, 60, 30]);
+            }
+        }
+
+        // --- DRAWING FUNCTIONS ---
+
+        // 1. Draw Starfield & Shooting Stars
+        function drawNightSky() {
+            stars.forEach(s => {
+                s.alpha += s.speed;
+                if (s.alpha > 1 || s.alpha < 0.2) s.speed = -s.speed;
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(s.alpha)})`;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Shooting Stars
+            for (let i = shootingStars.length - 1; i >= 0; i--) {
+                const ss = shootingStars[i];
+                ss.x += ss.dx;
+                ss.y += ss.dy;
+                ss.alpha -= 0.018;
+
+                if (ss.alpha <= 0) {
+                    shootingStars.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                const meteorGrad = ctx.createLinearGradient(ss.x, ss.y, ss.x - ss.dx * 8, ss.y - ss.dy * 8);
+                meteorGrad.addColorStop(0, `rgba(255, 255, 255, ${ss.alpha})`);
+                meteorGrad.addColorStop(0.4, `rgba(251, 113, 133, ${ss.alpha * 0.7})`);
+                meteorGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+                ctx.strokeStyle = meteorGrad;
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(ss.x, ss.y);
+                ctx.lineTo(ss.x - ss.dx * 12, ss.y - ss.dy * 12);
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = '#fb7185';
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(ss.x, ss.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // 2. Draw Moon, Pulsing Moonlight Beam & Glowing Ground Reflection
+        function drawMoonAndLight(prog) {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const moonX = w * 0.5 + beamAngle * 30;
+            const moonY = h * 0.16;
+            const moonRadius = 38;
+            const theme = PALETTES[flowerType];
+
+            // Heartbeat Pulse Calculation for Moon
+            const moonHeartbeat = Math.sin(animTime * 0.035) * 0.06 + Math.pow(Math.max(0, Math.sin(animTime * 0.035)), 4) * 0.08;
+            const postBloomGlow = prog >= 0.95 ? 1.25 : 1.0; // Brighter and larger after full bloom
+            const totalPulseScale = (1.0 + moonHeartbeat) * postBloomGlow;
+
+            // Moon Radial Halo Glow
+            const moonGlow = ctx.createRadialGradient(moonX, moonY, moonRadius * 0.5, moonX, moonY, moonRadius * 4.8 * totalPulseScale);
+            moonGlow.addColorStop(0, `rgba(255, 244, 246, ${0.9 * (1.0 + moonHeartbeat * 0.2)})`);
+            moonGlow.addColorStop(0.35, theme.moonGlow);
+            moonGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = moonGlow;
+            ctx.beginPath();
+            ctx.arc(moonX, moonY, moonRadius * 4.8 * totalPulseScale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Moon Body
+            ctx.fillStyle = '#fdf2f8';
+            ctx.shadowColor = '#fb7185';
+            ctx.shadowBlur = 15 * totalPulseScale;
+            ctx.beginPath();
+            ctx.arc(moonX, moonY, moonRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Moon Craters Shadow
+            ctx.fillStyle = 'rgba(244, 114, 182, 0.2)';
+            ctx.beginPath();
+            ctx.arc(moonX - 10, moonY - 8, 8, 0, Math.PI * 2);
+            ctx.arc(moonX + 12, moonY + 10, 11, 0, Math.PI * 2);
+            ctx.arc(moonX + 6, moonY - 14, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Moonlight Light Beam Cone
+            const targetX = w * 0.5 + beamAngle * 25;
+            const targetY = h * 0.88;
+            const beamWidth = (95 + Math.sin(animTime * 0.03) * 10) * postBloomGlow;
+
+            const beamGrad = ctx.createLinearGradient(moonX, moonY, targetX, targetY);
+            beamGrad.addColorStop(0, `rgba(253, 242, 248, ${0.35 * totalPulseScale})`);
+            beamGrad.addColorStop(0.6, `rgba(251, 113, 133, ${0.18 * totalPulseScale})`);
+            beamGrad.addColorStop(1, 'rgba(225, 29, 72, 0.02)');
+
+            ctx.save();
+            ctx.fillStyle = beamGrad;
+            ctx.beginPath();
+            ctx.moveTo(moonX, moonY);
+            ctx.lineTo(targetX - beamWidth, targetY);
+            ctx.lineTo(targetX + beamWidth, targetY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // Ground Glowing Moonlight Reflection Pool
+            const groundP = Math.min(prog / 0.18, 1.0);
+            ctx.save();
+            const reflectionRadiusX = 65 * groundP * totalPulseScale;
+            const reflectionRadiusY = 18 * groundP * totalPulseScale;
+            
+            const groundGlow = ctx.createRadialGradient(targetX, targetY, 0, targetX, targetY, reflectionRadiusX);
+            groundGlow.addColorStop(0, `rgba(251, 113, 133, ${0.75 * totalPulseScale})`);
+            groundGlow.addColorStop(0.5, `rgba(225, 29, 72, ${0.35 * totalPulseScale})`);
+            groundGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            ctx.fillStyle = groundGlow;
+            ctx.beginPath();
+            ctx.ellipse(targetX, targetY, reflectionRadiusX, reflectionRadiusY, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            return { x: targetX, y: targetY };
+        }
+
+        // 3. Draw Growing Stem & Leaves with Continuous Ambient Wind Sway
+        function drawStemStage(groundPos, prog) {
+            if (prog < 0.05) return;
+
+            const startX = groundPos.x;
+            const startY = groundPos.y;
+            const maxStemHeight = window.innerHeight * 0.44;
+            
+            const stemP = Math.min(Math.max((prog - 0.05) / 0.37, 0), 1.0);
+            const currentHeight = maxStemHeight * stemP;
+            const theme = PALETTES[flowerType];
+
+            // Continuous Gentle Wind Sway
+            const ambientSway = Math.sin(animTime * 0.025) * 8 + Math.cos(animTime * 0.018) * 5;
+
+            ctx.save();
+            ctx.lineWidth = 6 * (1 - stemP * 0.3);
+            ctx.strokeStyle = theme.stem;
+            ctx.lineCap = 'round';
+            ctx.shadowColor = theme.stem;
+            ctx.shadowBlur = 12;
+
+            const endX = startX + beamAngle * 20 * stemP + ambientSway * stemP;
+            const endY = startY - currentHeight;
+            const controlX = startX + beamAngle * 10 * stemP + ambientSway * 0.5 * stemP;
+            const controlY = startY - currentHeight * 0.5;
+
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+            ctx.stroke();
+
+            // Leaves
+            if (stemP > 0.3) {
+                const leaf1P = Math.min((stemP - 0.3) / 0.4, 1.0);
+                drawLeaf(startX - 2, startY - maxStemHeight * 0.3, -1, leaf1P, theme.leaf, ambientSway);
+            }
+            if (stemP > 0.6) {
+                const leaf2P = Math.min((stemP - 0.6) / 0.4, 1.0);
+                drawLeaf(startX + 2, startY - maxStemHeight * 0.6, 1, leaf2P, theme.leaf, ambientSway);
+            }
+
+            ctx.restore();
+
+            return { x: endX, y: endY, sway: ambientSway };
+        }
+
+        function drawLeaf(x, y, dir, prog, color, ambientSway) {
+            ctx.save();
+            ctx.translate(x + ambientSway * 0.4, y);
+            ctx.scale(prog, prog);
+            ctx.fillStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(dir * 35, -12, dir * 55, 12, dir * 45, 28);
+            ctx.bezierCurveTo(dir * 25, 22, dir * 12, 12, 0, 0);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 4. Draw Sepals & Luminescent Bud
+        function drawBudStage(headPos, prog) {
+            if (!headPos || prog < 0.38) return;
+
+            const budP = Math.min(Math.max((prog - 0.38) / 0.24, 0), 1.0);
+            const theme = PALETTES[flowerType];
+
+            ctx.save();
+            ctx.translate(headPos.x, headPos.y);
+
+            // Sepals
+            ctx.fillStyle = theme.sepal;
+            for (let i = 0; i < 5; i++) {
+                const angle = (i / 5) * Math.PI * 2 + headPos.sway * 0.01;
+                ctx.save();
+                ctx.rotate(angle);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(14 * budP, 22 * budP, 0, 30 * budP);
+                ctx.quadraticCurveTo(-14 * budP, 22 * budP, 0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Closed Bud Core
+            if (prog < 0.65) {
+                ctx.fillStyle = theme.petalBase;
+                ctx.shadowColor = theme.petalBase;
+                ctx.shadowBlur = 20;
+                ctx.beginPath();
+                ctx.arc(0, 0, 18 * budP, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        // 5. Draw Celestial Rose Petals with Soft Breathing Motion
+        function drawBloomStage(headPos, prog) {
+            if (!headPos || prog < 0.58) return;
+
+            const bloomP = Math.min(Math.max((prog - 0.58) / 0.27, 0), 1.0);
+            const theme = PALETTES[flowerType];
+
+            // Continuous Subtle Breathing Scale
+            const breathScale = 1.0 + Math.sin(animTime * 0.03) * 0.025;
+
+            ctx.save();
+            ctx.translate(headPos.x, headPos.y);
+            ctx.scale(breathScale, breathScale);
+
+            const layers = [
+                { count: 12, size: 85, angleOffset: 0, openP: Math.min(bloomP * 1.3, 1.0) },
+                { count: 9,  size: 62, angleOffset: 0.2, openP: Math.min(Math.max((bloomP - 0.2) * 1.4, 0), 1.0) },
+                { count: 6,  size: 42, angleOffset: 0.4, openP: Math.min(Math.max((bloomP - 0.4) * 1.6, 0), 1.0) }
+            ];
+
+            layers.forEach((layer) => {
+                if (layer.openP <= 0) return;
+
+                for (let i = 0; i < layer.count; i++) {
+                    const angle = (i / layer.count) * Math.PI * 2 + layer.angleOffset + beamAngle * 0.1 + Math.sin(animTime * 0.02 + i) * 0.02;
+                    
+                    ctx.save();
+                    ctx.rotate(angle);
+
+                    const petGrad = ctx.createLinearGradient(0, 0, 0, -layer.size * layer.openP);
+                    petGrad.addColorStop(0, theme.petalBase);
+                    petGrad.addColorStop(0.75, theme.petalTip);
+                    petGrad.addColorStop(1, '#ffffff');
+
+                    ctx.fillStyle = petGrad;
+                    ctx.shadowColor = theme.petalTip;
+                    ctx.shadowBlur = 20;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+
+                    // Celestial Rose Curvatures
+                    ctx.bezierCurveTo(-28 * layer.openP, -layer.size * 0.3 * layer.openP, -22 * layer.openP, -layer.size * 0.9 * layer.openP, 0, -layer.size * layer.openP);
+                    ctx.bezierCurveTo(22 * layer.openP, -layer.size * 0.9 * layer.openP, 28 * layer.openP, -layer.size * 0.3 * layer.openP, 0, 0);
+
+                    ctx.fill();
+                    ctx.restore();
+                }
+            });
+
+            ctx.restore();
+        }
+
+        // 6. Draw Stamens & Center Pistil Core
+        function drawStamenStage(headPos, prog) {
+            if (!headPos || prog < 0.82) return;
+
+            const stamenP = Math.min(Math.max((prog - 0.82) / 0.18, 0), 1.0);
+            const theme = PALETTES[flowerType];
+
+            ctx.save();
+            ctx.translate(headPos.x, headPos.y);
+
+            const stamenCount = 22;
+            const maxLen = 24;
+
+            for (let i = 0; i < stamenCount; i++) {
+                const angle = (i / stamenCount) * Math.PI * 2;
+                const len = maxLen * stamenP;
+
+                ctx.save();
+                ctx.rotate(angle);
+
+                ctx.strokeStyle = theme.stamen;
+                ctx.lineWidth = 1.8;
+                ctx.shadowColor = theme.stamen;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, -len);
+                ctx.stroke();
+
+                ctx.fillStyle = theme.pollen;
+                ctx.beginPath();
+                ctx.arc(0, -len, 3.0 * stamenP, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            ctx.fillStyle = '#fef08a';
+            ctx.shadowColor = '#fef08a';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(0, 0, 7 * stamenP, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // 7. Subtle Magical Sparkles Halo Around Flower
+        function updateAndDrawSubtleSparkles(headPos) {
+            if (!headPos || globalProgress < 0.3) return;
+            const theme = PALETTES[flowerType];
+
+            subtleSparkles.forEach(s => {
+                s.angle += s.speed;
+                s.twinklePhase += s.twinkleSpeed;
+                
+                const rx = headPos.x + Math.cos(s.angle) * s.dist;
+                const ry = headPos.y + Math.sin(s.angle * 1.5) * (s.dist * 0.5) + s.yOffset;
+                const alpha = (Math.sin(s.twinklePhase) * 0.45 + 0.55) * Math.min(globalProgress * 1.2, 1.0);
+
+                ctx.save();
+                ctx.fillStyle = theme.pollen;
+                ctx.shadowColor = theme.pollen;
+                ctx.shadowBlur = 10;
+                ctx.globalAlpha = alpha;
+                ctx.beginPath();
+                ctx.arc(rx, ry, s.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        // 8. Falling Petals Physics
+        function updateAndDrawFallingPetals(headPos) {
+            if (!headPos || globalProgress < 0.75) return;
+
+            if (Math.random() < 0.06 && fallingPetals.length < 25) {
+                const theme = PALETTES[flowerType];
+                fallingPetals.push({
+                    x: headPos.x + (Math.random() - 0.5) * 70,
+                    y: headPos.y + (Math.random() - 0.5) * 30,
+                    vx: (Math.random() - 0.5) * 0.6,
+                    vy: Math.random() * 0.7 + 0.5,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotSpeed: (Math.random() - 0.5) * 0.03,
+                    size: Math.random() * 7 + 5,
+                    alpha: 0.95,
+                    swayFreq: Math.random() * 0.03 + 0.015,
+                    color: theme.petalTip
+                });
+            }
+
+            for (let i = fallingPetals.length - 1; i >= 0; i--) {
+                const p = fallingPetals[i];
+                p.x += p.vx + Math.sin(animTime * p.swayFreq) * 0.8;
+                p.y += p.vy;
+                p.rotation += p.rotSpeed;
+                p.alpha -= 0.0025;
+
+                if (p.y > window.innerHeight + 20 || p.alpha <= 0) {
+                    fallingPetals.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.rotation);
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 10;
+                ctx.globalAlpha = p.alpha;
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(-p.size * 0.6, -p.size * 0.5, -p.size * 0.4, -p.size * 1.2, 0, -p.size * 1.2);
+                ctx.bezierCurveTo(p.size * 0.4, -p.size * 1.2, p.size * 0.6, -p.size * 0.5, 0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // 9. Glowing Butterflies
+        function updateAndDrawButterflies(headPos, prog) {
+            if (!headPos || prog < 0.65) return;
+
+            const entryP = Math.min((prog - 0.65) / 0.18, 1.0);
+
+            butterflies.forEach((b) => {
+                b.wingPhase += b.wingSpeed;
+
+                let targetX = b.x;
+                let targetY = b.y;
+
+                if (b.state === 'ENTRY') {
+                    const startX = b.side < 0 ? -120 : window.innerWidth + 120;
+                    const startY = window.innerHeight * 0.4;
+                    const orbitX = headPos.x + Math.cos(b.orbitAngle) * b.orbitRadiusX;
+                    const orbitY = headPos.y - 15 + Math.sin(b.orbitAngle * 2) * (b.orbitRadiusY * 0.5);
+
+                    targetX = startX + (orbitX - startX) * entryP;
+                    targetY = startY + (orbitY - startY) * entryP;
+
+                    if (entryP >= 1.0) b.state = 'ORBIT';
+                } 
+                else if (b.state === 'ORBIT') {
+                    b.orbitAngle += b.orbitSpeed;
+                    targetX = headPos.x + Math.cos(b.orbitAngle) * b.orbitRadiusX;
+                    targetY = headPos.y - 15 + Math.sin(b.orbitAngle * 2) * (b.orbitRadiusY * 0.5);
+
+                    if (b.isLander && prog >= 0.92) {
+                        b.state = 'LANDING';
+                    }
+                    if (prog >= 0.98 && !b.isLander && animTime > 900) {
+                        b.state = 'FLYING_UP';
+                    }
+                } 
+                else if (b.state === 'LANDING') {
+                    targetX = headPos.x + 8;
+                    targetY = headPos.y - 14;
+
+                    const dist = Math.hypot(targetX - b.x, targetY - b.y);
+                    if (dist < 5) {
+                        b.state = 'LANDED';
+                        b.landTimer = 0;
+                    }
+                } 
+                else if (b.state === 'LANDED') {
+                    targetX = headPos.x + 8;
+                    targetY = headPos.y - 14;
+                    b.wingSpeed = 0.05;
+                    b.landTimer++;
+
+                    if (b.landTimer > 150) {
+                        b.state = 'FLYING_UP';
+                        b.wingSpeed = 0.25;
+                    }
+                } 
+                else if (b.state === 'FLYING_UP') {
+                    targetX = headPos.x + (b.side * 180) + Math.sin(animTime * 0.03) * 50;
+                    targetY = -180;
+                }
+
+                b.x += (targetX - b.x) * (b.state === 'LANDED' ? 0.3 : 0.06);
+                b.y += (targetY - b.y) * (b.state === 'LANDED' ? 0.3 : 0.06);
+
+                if (Math.random() < 0.6 && b.state !== 'LANDED') {
+                    b.trail.push({
+                        x: b.x + (Math.random() - 0.5) * 6,
+                        y: b.y + (Math.random() - 0.5) * 6,
+                        alpha: 0.9,
+                        size: Math.random() * 2.2 + 0.8
+                    });
+                }
+
+                for (let i = b.trail.length - 1; i >= 0; i--) {
+                    const pt = b.trail[i];
+                    pt.alpha -= 0.025;
+                    pt.y += 0.2;
+                    if (pt.alpha <= 0) {
+                        b.trail.splice(i, 1);
+                        continue;
+                    }
+                    ctx.save();
+                    ctx.fillStyle = b.color;
+                    ctx.shadowColor = b.color;
+                    ctx.shadowBlur = 10;
+                    ctx.globalAlpha = pt.alpha;
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                ctx.save();
+                ctx.translate(b.x, b.y);
+
+                const flapFactor = Math.abs(Math.sin(b.wingPhase));
+                const wingWidth = 18 * flapFactor + 2;
+
+                ctx.shadowColor = b.color;
+                ctx.shadowBlur = 18;
+                ctx.globalAlpha = entryP;
+
+                ctx.fillStyle = b.color;
+                
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(-wingWidth * 1.2, -20, -wingWidth * 1.5, 6, 0, 9);
+                ctx.bezierCurveTo(-wingWidth * 0.9, 13, -wingWidth * 0.5, 18, 0, 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(wingWidth * 1.2, -20, wingWidth * 1.5, 6, 0, 9);
+                ctx.bezierCurveTo(wingWidth * 0.9, 13, wingWidth * 0.5, 18, 0, 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = 0.75 * entryP;
+                ctx.beginPath();
+                ctx.ellipse(-wingWidth * 0.45, -4, wingWidth * 0.28, 5, 0, 0, Math.PI * 2);
+                ctx.ellipse(wingWidth * 0.45, -4, wingWidth * 0.28, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#f8fafc';
+                ctx.globalAlpha = entryP;
+                ctx.beginPath();
+                ctx.ellipse(0, 2, 1.8, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(0, -4);
+                ctx.quadraticCurveTo(-4, -10, -6, -13);
+                ctx.moveTo(0, -4);
+                ctx.quadraticCurveTo(4, -10, 6, -13);
+                ctx.stroke();
+
+                ctx.restore();
+            });
+        }
+
+        // 10. Fireflies Simulation
+        function updateAndDrawFireflies() {
+            const theme = PALETTES[flowerType];
+
+            fireflies.forEach((f) => {
+                f.pulse += 0.04;
+                f.x += f.vx + beamAngle * 0.5;
+                f.y += f.vy;
+
+                if (f.x < 0 || f.x > window.innerWidth) f.vx = -f.vx;
+                if (f.y < 0 || f.y > window.innerHeight) f.vy = -f.vy;
+
+                const currentAlpha = Math.abs(Math.sin(f.pulse)) * f.alpha * (globalProgress > 0.7 ? 1.0 : 0.4);
+
+                ctx.save();
+                ctx.fillStyle = theme.pollen;
+                ctx.shadowColor = theme.pollen;
+                ctx.shadowBlur = 15;
+                ctx.globalAlpha = currentAlpha;
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        // --- MAIN ANIMATION RENDER LOOP ---
+        function render() {
+            animTime++;
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+            beamAngle += (targetBeamAngle - beamAngle) * 0.05;
+
+            if (isPlaying) {
+                globalProgress += bloomSpeed;
+                if (globalProgress > 1.0) globalProgress = 1.0;
+            }
+
+            if (globalProgress >= 0.98) {
+                targetZoom = 1.12 + Math.sin(animTime * 0.015) * 0.015;
+                if (!hasFlashed) {
+                    hasFlashed = true;
+                    flashAlpha = 0.85;
+                    triggerHaptic('heavy');
+                    triggerShootingStars();
+                }
+            } else if (globalProgress < 0.2) {
+                targetZoom = 1.0;
+                hasFlashed = false;
+            } else {
+                targetZoom = 1.0 + (globalProgress - 0.2) * 0.15;
+            }
+
+            currentZoom += (targetZoom - currentZoom) * 0.025;
+
+            drawNightSky();
+
+            ctx.save();
+            const zoomX = window.innerWidth * 0.5;
+            const zoomY = window.innerHeight * 0.55;
+            ctx.translate(zoomX, zoomY);
+            ctx.scale(currentZoom, currentZoom);
+            ctx.translate(-zoomX, -zoomY);
+
+            const groundPos = drawMoonAndLight(globalProgress);
+            const headPos = drawStemStage(groundPos, globalProgress);
+            drawBudStage(headPos, globalProgress);
+            drawBloomStage(headPos, globalProgress);
+            drawStamenStage(headPos, globalProgress);
+            updateAndDrawSubtleSparkles(headPos);
+            updateAndDrawFallingPetals(headPos);
+            updateAndDrawFireflies();
+            updateAndDrawButterflies(headPos, globalProgress);
+
+            ctx.restore();
+
+            if (flashAlpha > 0) {
+                ctx.save();
+                const flashGrad = ctx.createRadialGradient(
+                    window.innerWidth * 0.5, window.innerHeight * 0.45, 10,
+                    window.innerWidth * 0.5, window.innerHeight * 0.45, window.innerWidth * 0.8
+                );
+                flashGrad.addColorStop(0, `rgba(255, 255, 255, ${flashAlpha})`);
+                flashGrad.addColorStop(0.5, `rgba(251, 113, 133, ${flashAlpha * 0.6})`);
+                flashGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                
+                ctx.fillStyle = flashGrad;
+                ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+                ctx.restore();
+
+                flashAlpha -= 0.025;
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        // --- INTERACTION LISTENERS ---
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('introOverlay').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('introOverlay').style.visibility = 'hidden';
+            }, 800);
+
+            bgAudio.play().catch(err => console.log('Audio autoplay prevented'));
+            triggerHaptic('heavy');
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            targetBeamAngle = (e.clientX / window.innerWidth - 0.5) * 2;
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) {
+                targetBeamAngle = (e.touches[0].clientX / window.innerWidth - 0.5) * 2;
+            }
+        });
+
+        window.addEventListener('touchend', () => {
+            targetBeamAngle = 0;
+        });
+
+        render();
+    </script>
+</body>
+</html>
